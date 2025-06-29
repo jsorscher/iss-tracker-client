@@ -1,77 +1,76 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ISS Tracker Sensor Feed</title>
+  <meta charset="UTF-8">
+  <title>Sensor Readout</title>
   <style>
     body {
       font-family: sans-serif;
-      padding: 2rem;
-      background: #f0f0f0;
+      background: #111;
+      color: #eee;
+      padding: 1rem;
     }
     h1 { font-size: 1.5rem; }
-    #data { font-size: 1.2rem; margin-top: 1rem; }
-    button {
-      padding: 0.5rem 1rem;
-      font-size: 1rem;
-      margin-top: 1rem;
-    }
+    p { margin: 0.5rem 0; }
+    .label { font-weight: bold; }
   </style>
 </head>
 <body>
-  <h1>Sensor Data (Absolute Orientation)</h1>
-  <button id="startButton">Start Sensors</button>
-  <div id="data">
-    <p><strong>Heading:</strong> <span id="heading">-</span>°</p>
-    <p><strong>Pitch (β):</strong> <span id="pitch">-</span>°</p>
-    <p><strong>Roll (γ):</strong> <span id="roll">-</span>°</p>
-  </div>
+  <h1>Phone Sensor Readout</h1>
+  <p><span class="label">Latitude:</span> <span id="lat">...</span></p>
+  <p><span class="label">Longitude:</span> <span id="lon">...</span></p>
+  <p><span class="label">Heading:</span> <span id="heading">...</span></p>
+  <p><span class="label">Status:</span> <span id="status">Initializing…</span></p>
 
   <script>
-    const headingEl = document.getElementById("heading");
-    const pitchEl = document.getElementById("pitch");
-    const rollEl = document.getElementById("roll");
-    const startButton = document.getElementById("startButton");
-
-    function handleOrientation(event) {
-      let heading = event.alpha;
-      if (typeof event.webkitCompassHeading !== "undefined") {
-        heading = event.webkitCompassHeading; // iOS-specific
-      } else if (event.absolute === true && heading != null) {
-        heading = 360 - heading; // make 0° = north
-      } else {
-        heading = heading || 0;
+    async function requestPermissions() {
+      if (typeof DeviceOrientationEvent?.requestPermission === 'function') {
+        try {
+          const result = await DeviceOrientationEvent.requestPermission();
+          if (result !== 'granted') {
+            document.getElementById("status").textContent = "Orientation permission denied.";
+            return false;
+          }
+        } catch (e) {
+          document.getElementById("status").textContent = "Orientation permission error.";
+          return false;
+        }
       }
-
-      headingEl.textContent = heading.toFixed(1);
-      pitchEl.textContent = event.beta ? event.beta.toFixed(1) : "-";
-      rollEl.textContent = event.gamma ? event.gamma.toFixed(1) : "-";
+      return true;
     }
 
-    function startSensorAccess() {
-      if (
-        typeof DeviceOrientationEvent !== "undefined" &&
-        typeof DeviceOrientationEvent.requestPermission === "function"
-      ) {
-        DeviceOrientationEvent.requestPermission()
-          .then((response) => {
-            if (response === "granted") {
-              window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-              window.addEventListener("deviceorientation", handleOrientation, true); // fallback
-            } else {
-              alert("Permission denied");
-            }
-          })
-          .catch(console.error);
+    async function init() {
+      const permitted = await requestPermissions();
+      if (!permitted) return;
+
+      window.addEventListener("deviceorientation", (event) => {
+        let heading = event.alpha;
+        if (typeof event.webkitCompassHeading !== "undefined") {
+          heading = event.webkitCompassHeading;
+        }
+        if (heading != null) {
+          document.getElementById("heading").textContent = heading.toFixed(2) + "°";
+        } else {
+          document.getElementById("heading").textContent = "Unavailable";
+        }
+      });
+
+      if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(pos => {
+          const { latitude, longitude } = pos.coords;
+          document.getElementById("lat").textContent = latitude.toFixed(6);
+          document.getElementById("lon").textContent = longitude.toFixed(6);
+        }, err => {
+          document.getElementById("status").textContent = "Location error.";
+        });
       } else {
-        // Non-iOS devices
-        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-        window.addEventListener("deviceorientation", handleOrientation, true); // fallback
+        document.getElementById("status").textContent = "Geolocation not supported.";
       }
+
+      document.getElementById("status").textContent = "Tracking active.";
     }
 
-    startButton.addEventListener("click", startSensorAccess);
+    init();
   </script>
 </body>
 </html>
