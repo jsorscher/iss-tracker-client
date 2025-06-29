@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ISS Tracker Input</title>
+  <style>
+    body { font-family: sans-serif; padding: 1rem; }
+    #status { margin: 1rem 0; color: green; }
+    button { padding: 0.5rem 1rem; font-size: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>ISS Tracker Input</h1>
+  <p>Tap the button below to share motion/orientation and location data with your Arduino WebSocket server.</p>
+  <button id="startBtn">Enable Sensors</button>
+  <div id="status">Not connected</div>
+
+  <script>
+    const statusEl = document.getElementById('status');
+    const ws = new WebSocket('ws://192.168.0.123:81'); // CHANGE THIS TO YOUR ARDUINO IP
+
+    ws.onopen = () => statusEl.textContent = 'WebSocket connected';
+    ws.onclose = () => statusEl.textContent = 'WebSocket disconnected';
+    ws.onerror = (e) => {
+      console.error(e);
+      statusEl.textContent = 'WebSocket error';
+    };
+
+    function sendData(data) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(data));
+      }
+    }
+
+    document.getElementById('startBtn').addEventListener('click', async () => {
+      try {
+        if (typeof DeviceMotionEvent.requestPermission === 'function') {
+          const response = await DeviceMotionEvent.requestPermission();
+          const orientation = await DeviceOrientationEvent.requestPermission();
+          if (response !== 'granted' || orientation !== 'granted') {
+            statusEl.textContent = 'Permission denied';
+            return;
+          }
+        }
+
+        window.addEventListener('deviceorientation', (event) => {
+          const data = {
+            type: 'orientation',
+            alpha: event.alpha,
+            beta: event.beta,
+            gamma: event.gamma
+          };
+          sendData(data);
+        });
+
+        navigator.geolocation.watchPosition((pos) => {
+          const data = {
+            type: 'location',
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            acc: pos.coords.accuracy
+          };
+          sendData(data);
+        });
+
+        statusEl.textContent = 'Sensors active, data streaming...';
+      } catch (err) {
+        console.error('Permission error:', err);
+        statusEl.textContent = 'Permission request failed';
+      }
+    });
+  </script>
+</body>
+</html>
