@@ -3,111 +3,75 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ISS Tracker Sensor Client</title>
+  <title>ISS Tracker Sensor Feed</title>
   <style>
     body {
       font-family: sans-serif;
       padding: 2rem;
-      background: #111;
-      color: #eee;
+      background: #f0f0f0;
     }
-    .label {
-      font-weight: bold;
+    h1 { font-size: 1.5rem; }
+    #data { font-size: 1.2rem; margin-top: 1rem; }
+    button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      margin-top: 1rem;
     }
   </style>
 </head>
 <body>
-  <h1>Sensor Data</h1>
-  <p><span class="label">Latitude:</span> <span id="lat">...</span></p>
-  <p><span class="label">Longitude:</span> <span id="lon">...</span></p>
-  <p><span class="label">Heading (True North):</span> <span id="heading">...</span></p>
-  <p><span class="label">Magnetic Declination:</span> <span id="declination">...</span></p>
-  <p><span class="label">Status:</span> <span id="status">Waiting for sensor data...</span></p>
+  <h1>Sensor Data (Absolute Orientation)</h1>
+  <button id="startButton">Start Sensors</button>
+  <div id="data">
+    <p><strong>Heading:</strong> <span id="heading">-</span>°</p>
+    <p><strong>Pitch (β):</strong> <span id="pitch">-</span>°</p>
+    <p><strong>Roll (γ):</strong> <span id="roll">-</span>°</p>
+  </div>
 
   <script>
-    let declination = 0;
-    let lastCoords = null;
+    const headingEl = document.getElementById("heading");
+    const pitchEl = document.getElementById("pitch");
+    const rollEl = document.getElementById("roll");
+    const startButton = document.getElementById("startButton");
 
-    async function fetchDeclination(lat, lon) {
-      try {
-        const response = await fetch(`https://www.ngdc.noaa.gov/geomag-web/calculators/calculateDeclination?lat1=${lat}&lon1=${lon}&resultFormat=json`);
-        const data = await response.json();
-        declination = data.result[0].declination;
-        document.getElementById("declination").textContent = declination.toFixed(2) + "°";
-      } catch (e) {
-        console.error("Error fetching declination:", e);
-        document.getElementById("declination").textContent = "Error";
+    function handleOrientation(event) {
+      let heading = event.alpha;
+      if (typeof event.webkitCompassHeading !== "undefined") {
+        heading = event.webkitCompassHeading; // iOS-specific
+      } else if (event.absolute === true && heading != null) {
+        heading = 360 - heading; // make 0° = north
+      } else {
+        heading = heading || 0;
+      }
+
+      headingEl.textContent = heading.toFixed(1);
+      pitchEl.textContent = event.beta ? event.beta.toFixed(1) : "-";
+      rollEl.textContent = event.gamma ? event.gamma.toFixed(1) : "-";
+    }
+
+    function startSensorAccess() {
+      if (
+        typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        DeviceOrientationEvent.requestPermission()
+          .then((response) => {
+            if (response === "granted") {
+              window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+              window.addEventListener("deviceorientation", handleOrientation, true); // fallback
+            } else {
+              alert("Permission denied");
+            }
+          })
+          .catch(console.error);
+      } else {
+        // Non-iOS devices
+        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+        window.addEventListener("deviceorientation", handleOrientation, true); // fallback
       }
     }
 
-    function updateHeading(alpha) {
-      if (alpha == null) return;
-
-      let trueHeading = alpha + declination;
-      trueHeading = (trueHeading + 360) % 360;
-
-      document.getElementById("heading").textContent = trueHeading.toFixed(2) + "°";
-    }
-
-    async function requestPermissionsIfNeeded() {
-      const ua = navigator.userAgent || navigator.vendor || window.opera;
-      if (/iPad|iPhone|iPod/.test(ua) && typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
-        try {
-          const response = await DeviceOrientationEvent.requestPermission();
-          if (response !== "granted") {
-            document.getElementById("status").textContent = "Permission denied for device orientation.";
-            return false;
-          }
-        } catch (err) {
-          document.getElementById("status").textContent = "Orientation permission request failed.";
-          console.error(err);
-          return false;
-        }
-      }
-      return true;
-    }
-
-    async function startSensors() {
-      const permissionGranted = await requestPermissionsIfNeeded();
-      if (!permissionGranted) return;
-
-      document.getElementById("status").textContent = "Listening for sensor data...";
-
-      window.addEventListener("deviceorientationabsolute", (event) => {
-        if (event.absolute || typeof event.webkitCompassHeading !== "undefined") {
-          let alpha = event.alpha;
-
-          if (typeof event.webkitCompassHeading !== "undefined") {
-            alpha = event.webkitCompassHeading;
-          }
-
-          updateHeading(alpha);
-        }
-      }, true);
-    }
-
-    if ("geolocation" in navigator) {
-      navigator.geolocation.watchPosition((position) => {
-        const lat = position.coords.latitude;
-        const lon = position.coords.longitude;
-
-        document.getElementById("lat").textContent = lat.toFixed(6);
-        document.getElementById("lon").textContent = lon.toFixed(6);
-
-        const roundedCoords = [Math.round(lat * 10) / 10, Math.round(lon * 10) / 10].toString();
-        if (roundedCoords !== lastCoords) {
-          lastCoords = roundedCoords;
-          fetchDeclination(lat, lon);
-        }
-      }, (err) => {
-        console.error(err);
-        document.getElementById("status").textContent = "Failed to get location.";
-      }, { enableHighAccuracy: true });
-    } else {
-      document.getElementById("status").textContent = "Geolocation not supported.";
-    }
-
-    startSensors();
+    startButton.addEventListener("click", startSensorAccess);
   </script>
 </body>
 </html>
