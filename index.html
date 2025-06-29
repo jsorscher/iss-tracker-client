@@ -2,74 +2,149 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ISS Tracker Input</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ISS Tracker Sensor</title>
   <style>
-    body { font-family: sans-serif; padding: 1rem; }
-    #status { margin: 1rem 0; color: green; }
-    button { padding: 0.5rem 1rem; font-size: 1rem; }
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    h1 { font-size: 24px; }
+    #status { margin-bottom: 15px; color: green; }
+    .sensor-data { margin-bottom: 10px; }
+    button { padding: 8px 15px; font-size: 16px; }
   </style>
 </head>
 <body>
-  <h1>ISS Tracker Input</h1>
-  <p>Tap the button below to share motion/orientation and location data with your Arduino WebSocket server.</p>
-  <button id="startBtn">Enable Sensors</button>
-  <div id="status">Not connected</div>
 
-  <script>
-    const statusEl = document.getElementById('status');
-    const ws = new WebSocket('ws://192.168.0.123:81'); // CHANGE THIS TO YOUR ARDUINO IP
+  <h1>ISS Tracker Sensor Data</h1>
+  <div id="status">WebSocket: <span id="wsStatus">Disconnected</span></div>
 
-    ws.onopen = () => statusEl.textContent = 'WebSocket connected';
-    ws.onclose = () => statusEl.textContent = 'WebSocket disconnected';
-    ws.onerror = (e) => {
-      console.error(e);
-      statusEl.textContent = 'WebSocket error';
+  <button id="requestPermissionBtn">Request Motion Permission</button>
+
+  <div class="sensor-data">
+    <strong>Orientation:</strong><br />
+    Alpha: <span id="alpha">-</span><br />
+    Beta: <span id="beta">-</span><br />
+    Gamma: <span id="gamma">-</span><br />
+  </div>
+
+  <div class="sensor-data">
+    <strong>GPS:</strong><br />
+    Latitude: <span id="lat">-</span><br />
+    Longitude: <span id="lon">-</span><br />
+    Accuracy: <span id="accuracy">-</span> meters<br />
+  </div>
+
+<script>
+  const wsStatus = document.getElementById('wsStatus');
+  const alphaSpan = document.getElementById('alpha');
+  const betaSpan = document.getElementById('beta');
+  const gammaSpan = document.getElementById('gamma');
+  const latSpan = document.getElementById('lat');
+  const lonSpan = document.getElementById('lon');
+  const accuracySpan = document.getElementById('accuracy');
+  const requestBtn = document.getElementById('requestPermissionBtn');
+
+  let ws;
+
+  function connectWebSocket() {
+    // Replace with your Arduino IP and port
+    ws = new WebSocket('ws://10.0.0.193:81');
+
+    ws.onopen = () => {
+      wsStatus.textContent = 'Connected';
+      wsStatus.style.color = 'green';
+      console.log('WebSocket connected');
     };
 
-    function sendData(data) {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify(data));
-      }
+    ws.onclose = () => {
+      wsStatus.textContent = 'Disconnected';
+      wsStatus.style.color = 'red';
+      console.log('WebSocket disconnected, retrying in 3 seconds');
+      setTimeout(connectWebSocket, 3000);
+    };
+
+    ws.onerror = (err) => {
+      console.error('WebSocket error:', err);
+      ws.close();
+    };
+  }
+
+  // Send orientation data over WebSocket
+  function handleOrientation(event) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const data = {
+        type: 'orientation',
+        alpha: event.alpha,
+        beta: event.beta,
+        gamma: event.gamma
+      };
+      ws.send(JSON.stringify(data));
     }
+    alphaSpan.textContent = event.alpha?.toFixed(2) || '-';
+    betaSpan.textContent = event.beta?.toFixed(2) || '-';
+    gammaSpan.textContent = event.gamma?.toFixed(2) || '-';
+  }
 
-    document.getElementById('startBtn').addEventListener('click', async () => {
+  // Send GPS data over WebSocket
+  function handlePosition(position) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const coords = {
+        type: 'gps',
+        lat: position.coords.latitude,
+        lon: position.coords.longitude,
+        accuracy: position.coords.accuracy
+      };
+      ws.send(JSON.stringify(coords));
+    }
+    latSpan.textContent = position.coords.latitude.toFixed(6);
+    lonSpan.textContent = position.coords.longitude.toFixed(6);
+    accuracySpan.textContent = position.coords.accuracy.toFixed(2);
+  }
+
+  // Request permissions on iOS for motion & orientation
+  async function requestMotionPermission() {
+    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       try {
-        if (typeof DeviceMotionEvent.requestPermission === 'function') {
-          const response = await DeviceMotionEvent.requestPermission();
-          const orientation = await DeviceOrientationEvent.requestPermission();
-          if (response !== 'granted' || orientation !== 'granted') {
-            statusEl.textContent = 'Permission denied';
-            return;
-          }
+        const response = await DeviceMotionEvent.requestPermission();
+        if (response === 'granted') {
+          window.addEventListener('deviceorientation', handleOrientation);
+          requestBtn.style.display = 'none';
+          console.log('Motion permission granted');
+        } else {
+          alert('Motion permission denied');
         }
-
-        window.addEventListener('deviceorientation', (event) => {
-          const data = {
-            type: 'orientation',
-            alpha: event.alpha,
-            beta: event.beta,
-            gamma: event.gamma
-          };
-          sendData(data);
-        });
-
-        navigator.geolocation.watchPosition((pos) => {
-          const data = {
-            type: 'location',
-            lat: pos.coords.latitude,
-            lon: pos.coords.longitude,
-            acc: pos.coords.accuracy
-          };
-          sendData(data);
-        });
-
-        statusEl.textContent = 'Sensors active, data streaming...';
-      } catch (err) {
-        console.error('Permission error:', err);
-        statusEl.textContent = 'Permission request failed';
+      } catch (error) {
+        alert('Error requesting motion permission: ' + error);
       }
-    });
-  </script>
+    } else {
+      // Non iOS 13+ devices auto-grant permission
+      window.addEventListener('deviceorientation', handleOrientation);
+      requestBtn.style.display = 'none';
+    }
+  }
+
+  // Request GPS permission & start watching
+  function requestGPSPermission() {
+    if ('geolocation' in navigator) {
+      navigator.geolocation.watchPosition(handlePosition, (error) => {
+        alert('Geolocation error: ' + error.message);
+      }, {
+        enableHighAccuracy: true,
+        maximumAge: 1000,
+        timeout: 5000
+      });
+    } else {
+      alert('Geolocation not supported on this device');
+    }
+  }
+
+  // Hook up button
+  requestBtn.addEventListener('click', async () => {
+    await requestMotionPermission();
+    requestGPSPermission();
+  });
+
+  // Start WebSocket connection right away, permissions requested by button
+  connectWebSocket();
+</script>
 </body>
 </html>
