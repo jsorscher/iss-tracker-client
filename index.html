@@ -106,7 +106,7 @@
       try {
         const response = await DeviceMotionEvent.requestPermission();
         if (response === 'granted') {
-          window.addEventListener('deviceorientation', handleOrientation);
+          window.addEventListener('deviceorientationabsolute', handleOrientation);
           requestBtn.style.display = 'none';
           console.log('Motion permission granted');
         } else {
@@ -117,7 +117,7 @@
       }
     } else {
       // Non iOS 13+ devices auto-grant permission
-      window.addEventListener('deviceorientation', handleOrientation);
+      window.addEventListener('deviceorientationabsolute', handleOrientation);
       requestBtn.style.display = 'none';
     }
   }
