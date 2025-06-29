@@ -2,149 +2,76 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ISS Tracker Sensor</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ISS Tracker Sensor Feed</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; }
-    h1 { font-size: 24px; }
-    #status { margin-bottom: 15px; color: green; }
-    .sensor-data { margin-bottom: 10px; }
-    button { padding: 8px 15px; font-size: 16px; }
+    body {
+      font-family: sans-serif;
+      padding: 2rem;
+      background: #f0f0f0;
+    }
+    h1 { font-size: 1.5rem; }
+    #data { font-size: 1.2rem; margin-top: 1rem; }
+    button {
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      margin-top: 1rem;
+    }
   </style>
 </head>
 <body>
-
-  <h1>ISS Tracker Sensor Data</h1>
-  <div id="status">WebSocket: <span id="wsStatus">Disconnected</span></div>
-
-  <button id="requestPermissionBtn">Request Motion Permission</button>
-
-  <div class="sensor-data">
-    <strong>Orientation:</strong><br />
-    Alpha: <span id="alpha">-</span><br />
-    Beta: <span id="beta">-</span><br />
-    Gamma: <span id="gamma">-</span><br />
+  <h1>Sensor Data (Absolute Orientation)</h1>
+  <button id="startButton">Start Sensors</button>
+  <div id="data">
+    <p><strong>Heading:</strong> <span id="heading">-</span>°</p>
+    <p><strong>Pitch (β):</strong> <span id="pitch">-</span>°</p>
+    <p><strong>Roll (γ):</strong> <span id="roll">-</span>°</p>
   </div>
 
-  <div class="sensor-data">
-    <strong>GPS:</strong><br />
-    Latitude: <span id="lat">-</span><br />
-    Longitude: <span id="lon">-</span><br />
-    Accuracy: <span id="accuracy">-</span> meters<br />
-  </div>
+  <script>
+    const headingEl = document.getElementById("heading");
+    const pitchEl = document.getElementById("pitch");
+    const rollEl = document.getElementById("roll");
+    const startButton = document.getElementById("startButton");
 
-<script>
-  const wsStatus = document.getElementById('wsStatus');
-  const alphaSpan = document.getElementById('alpha');
-  const betaSpan = document.getElementById('beta');
-  const gammaSpan = document.getElementById('gamma');
-  const latSpan = document.getElementById('lat');
-  const lonSpan = document.getElementById('lon');
-  const accuracySpan = document.getElementById('accuracy');
-  const requestBtn = document.getElementById('requestPermissionBtn');
-
-  let ws;
-
-  function connectWebSocket() {
-    // Replace with your Arduino IP and port
-    ws = new WebSocket('ws://10.0.0.193:81');
-
-    ws.onopen = () => {
-      wsStatus.textContent = 'Connected';
-      wsStatus.style.color = 'green';
-      console.log('WebSocket connected');
-    };
-
-    ws.onclose = () => {
-      wsStatus.textContent = 'Disconnected';
-      wsStatus.style.color = 'red';
-      console.log('WebSocket disconnected, retrying in 3 seconds');
-      setTimeout(connectWebSocket, 3000);
-    };
-
-    ws.onerror = (err) => {
-      console.error('WebSocket error:', err);
-      ws.close();
-    };
-  }
-
-  // Send orientation data over WebSocket
-  function handleOrientation(event) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      const data = {
-        type: 'orientation',
-        alpha: event.alpha,
-        beta: event.beta,
-        gamma: event.gamma
-      };
-      ws.send(JSON.stringify(data));
-    }
-    alphaSpan.textContent = event.alpha?.toFixed(2) || '-';
-    betaSpan.textContent = event.beta?.toFixed(2) || '-';
-    gammaSpan.textContent = event.gamma?.toFixed(2) || '-';
-  }
-
-  // Send GPS data over WebSocket
-  function handlePosition(position) {
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      const coords = {
-        type: 'gps',
-        lat: position.coords.latitude,
-        lon: position.coords.longitude,
-        accuracy: position.coords.accuracy
-      };
-      ws.send(JSON.stringify(coords));
-    }
-    latSpan.textContent = position.coords.latitude.toFixed(6);
-    lonSpan.textContent = position.coords.longitude.toFixed(6);
-    accuracySpan.textContent = position.coords.accuracy.toFixed(2);
-  }
-
-  // Request permissions on iOS for motion & orientation
-  async function requestMotionPermission() {
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-      try {
-        const response = await DeviceMotionEvent.requestPermission();
-        if (response === 'granted') {
-          window.addEventListener('deviceorientationabsolute', handleOrientation);
-          requestBtn.style.display = 'none';
-          console.log('Motion permission granted');
-        } else {
-          alert('Motion permission denied');
-        }
-      } catch (error) {
-        alert('Error requesting motion permission: ' + error);
+    function handleOrientation(event) {
+      let heading = event.alpha;
+      if (typeof event.webkitCompassHeading !== "undefined") {
+        heading = event.webkitCompassHeading; // iOS-specific
+      } else if (event.absolute === true && heading != null) {
+        heading = 360 - heading; // make 0° = north
+      } else {
+        heading = heading || 0;
       }
-    } else {
-      // Non iOS 13+ devices auto-grant permission
-      window.addEventListener('deviceorientationabsolute', handleOrientation);
-      requestBtn.style.display = 'none';
+
+      headingEl.textContent = heading.toFixed(1);
+      pitchEl.textContent = event.beta ? event.beta.toFixed(1) : "-";
+      rollEl.textContent = event.gamma ? event.gamma.toFixed(1) : "-";
     }
-  }
 
-  // Request GPS permission & start watching
-  function requestGPSPermission() {
-    if ('geolocation' in navigator) {
-      navigator.geolocation.watchPosition(handlePosition, (error) => {
-        alert('Geolocation error: ' + error.message);
-      }, {
-        enableHighAccuracy: true,
-        maximumAge: 1000,
-        timeout: 5000
-      });
-    } else {
-      alert('Geolocation not supported on this device');
+    function startSensorAccess() {
+      if (
+        typeof DeviceOrientationEvent !== "undefined" &&
+        typeof DeviceOrientationEvent.requestPermission === "function"
+      ) {
+        DeviceOrientationEvent.requestPermission()
+          .then((response) => {
+            if (response === "granted") {
+              window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+              window.addEventListener("deviceorientation", handleOrientation, true); // fallback
+            } else {
+              alert("Permission denied");
+            }
+          })
+          .catch(console.error);
+      } else {
+        // Non-iOS devices
+        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+        window.addEventListener("deviceorientation", handleOrientation, true); // fallback
+      }
     }
-  }
 
-  // Hook up button
-  requestBtn.addEventListener('click', async () => {
-    await requestMotionPermission();
-    requestGPSPermission();
-  });
-
-  // Start WebSocket connection right away, permissions requested by button
-  connectWebSocket();
-</script>
+    startButton.addEventListener("click", startSensorAccess);
+  </script>
 </body>
 </html>
